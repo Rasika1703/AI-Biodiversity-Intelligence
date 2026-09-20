@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  backend:
+    name: Backend — install, test, boot
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest httpx
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Boot smoke test
+        run: |
+          uvicorn app.main:app --port 8000 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8000/api/health && break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8000/api/health | head -c 400
+
+  frontend:
+    name: Frontend — install and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image
+        run: docker build -t darukaa-api ./backend
+      - name: Build web image
+        run: docker build -t darukaa-web ./frontend
