@@ -1,0 +1,7 @@
+cd "C:\Users\Rahul Gawade\Downloads\darukaa-earth\darukaa-earth"
+
+"3.12.1" | Set-Content .\backend\runtime.txt
+
+git add backend/runtime.txt
+git commit -m "Set Python 3.12 for Render deployment"
+git push origin main
