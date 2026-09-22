@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Darukaa — AI Environmental Scientist</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0A0F0B; --bg-2:#0E140F; --surface:#121A13; --surface-2:#182219;
+  --line:#243027; --line-bright:#3A4A3C; --text:#E7EFE4; --text-dim:#8FA089;
+  --text-faint:#5C6B58; --spectral:#B6FF3E; --spectral-dim:#7FB82C;
+  --copper:#FF9B52; --sky:#5FD6E3; --radius:3px;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:'Space Grotesk', sans-serif;min-height:100vh;-webkit-font-smoothing:antialiased;}
+.mono{font-family:'IBM Plex Mono', monospace;}
+.hero{position:relative;overflow:hidden;border-bottom:1px solid var(--line);
+  background:radial-gradient(ellipse 900px 500px at 15% -10%, rgba(182,255,62,0.08), transparent 60%),
+             radial-gradient(ellipse 700px 500px at 100% 0%, rgba(95,214,227,0.06), transparent 55%), var(--bg);}
+.hero-inner{max-width:1080px;margin:0 auto;padding:3.2rem 1.6rem 2.4rem;position:relative;z-index:2;}
+.contours{position:absolute;inset:0;z-index:1;opacity:0.5;pointer-events:none;}
+.eyebrow{display:inline-flex;align-items:center;gap:.5rem;font-family:'IBM Plex Mono',monospace;font-size:.72rem;color:var(--spectral-dim);border:1px solid var(--line-bright);padding:.3rem .7rem;border-radius:20px;background:rgba(182,255,62,0.05);}
+.eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--spectral);box-shadow:0 0 8px var(--spectral);animation:pulse 2s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+.hero h1{font-size:clamp(2rem, 5vw, 3.1rem);font-weight:700;line-height:1.05;letter-spacing:-0.02em;margin:1.1rem 0 .9rem;max-width:15ch;}
+.hero h1 em{font-style:normal;color:var(--spectral);}
+.hero p.lede{font-size:1.05rem;color:var(--text-dim);max-width:56ch;line-height:1.6;margin:0 0 1.8rem;}
+.stat-strip{display:grid;grid-template-columns:repeat(4, 1fr);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--surface);}
+.stat{padding:.95rem 1.1rem;border-right:1px solid var(--line);}
+.stat:last-child{border-right:none;}
+.stat .num{font-family:'IBM Plex Mono', monospace;font-size:1.3rem;font-weight:600;color:var(--spectral);display:block;}
+.stat .lbl{font-size:.74rem;color:var(--text-faint);margin-top:.15rem;}
+main{max-width:1080px;margin:0 auto;padding:0 1.6rem;}
+.section{padding:2.6rem 0;border-bottom:1px solid var(--line);}
+.section-head{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin-bottom:1.3rem;flex-wrap:wrap;}
+.section-head h2{font-size:1.3rem;margin:0;font-weight:600;}
+.section-head .count{font-family:'IBM Plex Mono', monospace;font-size:.78rem;color:var(--text-faint);}
+.domain-grid{display:grid;grid-template-columns:repeat(5, 1fr);gap:.85rem;}
+.domain-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:1.1rem .95rem;transition:border-color .15s ease, transform .15s ease;}
+.domain-card:hover{border-color:var(--line-bright);transform:translateY(-2px);}
+.domain-card .icon{width:26px;height:26px;color:var(--spectral);margin-bottom:.7rem;}
+.domain-card h3{font-size:.92rem;margin:0 0 .35rem;font-weight:600;}
+.domain-card p{font-size:.78rem;color:var(--text-dim);line-height:1.45;margin:0 0 .6rem;}
+.domain-card .n{font-family:'IBM Plex Mono', monospace;font-size:.68rem;color:var(--text-faint);}
+.console{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;}
+.console-bar{display:flex;align-items:center;gap:.5rem;padding:.6rem .9rem;border-bottom:1px solid var(--line);background:var(--surface-2);}
+.console-bar .dots{display:flex;gap:.3rem;}
+.console-bar .dots span{width:8px;height:8px;border-radius:50%;background:var(--line-bright);}
+.console-bar .title{font-family:'IBM Plex Mono', monospace;font-size:.72rem;color:var(--text-faint);margin-left:.3rem;}
+.console-body{padding:1.2rem;}
+.chips{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;}
+.chip{font-family:'IBM Plex Mono', monospace;font-size:.72rem;padding:.4rem .75rem;border:1px solid var(--line);border-radius:20px;background:var(--bg-2);cursor:pointer;color:var(--text-dim);transition:all .12s ease;}
+.chip:hover{border-color:var(--spectral-dim);color:var(--spectral);}
+.known-row{font-family:'IBM Plex Mono', monospace;font-size:.72rem;color:var(--text-faint);margin-bottom:1rem;min-height:1.1rem;}
+.known-row b{color:var(--sky);font-weight:500;}
+#log{display:flex;flex-direction:column;gap:1rem;margin-bottom:1rem;}
+.msg{padding:.85rem 1rem;border-radius:var(--radius);font-size:.92rem;line-height:1.55;max-width:100%;}
+.msg.user{background:var(--bg-2);border:1px solid var(--line);align-self:flex-end;max-width:75%;font-family:'IBM Plex Mono', monospace;font-size:.85rem;}
+.msg.bot-text{border-left:2px solid var(--spectral-dim);padding-left:.9rem;color:var(--text-dim);}
+.row{display:flex;}
+.row.user{justify-content:flex-end;}
+.links-box{border:1px solid var(--line);border-radius:var(--radius);padding:.8rem .95rem;background:var(--bg-2);margin-bottom:.2rem;}
+.links-box .lbl{font-family:'IBM Plex Mono', monospace;font-size:.68rem;color:var(--sky);margin-bottom:.5rem;display:block;}
+.links-box ul{margin:0;padding-left:1.1rem;}
+.links-box li{font-size:.82rem;color:var(--text-dim);margin-bottom:.35rem;line-height:1.45;}
+.evidence-grid{display:grid;gap:.8rem;}
+.card{border:1px solid var(--line);border-radius:var(--radius);background:var(--bg-2);overflow:hidden;}
+.card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;padding:.9rem 1rem .7rem;}
+.card-head h4{font-size:.98rem;margin:0;font-weight:600;line-height:1.35;}
+.card-idx{font-family:'IBM Plex Mono', monospace;font-size:.7rem;color:var(--text-faint);flex-shrink:0;padding-top:.15rem;}
+.card-body{padding:0 1rem .5rem;}
+.card-body .why{font-size:.84rem;color:var(--text-dim);line-height:1.55;margin:0 0 .7rem;}
+.impact-line{display:flex;gap:.5rem;align-items:baseline;font-family:'IBM Plex Mono', monospace;font-size:.78rem;color:var(--spectral);background:rgba(182,255,62,0.06);border:1px solid rgba(182,255,62,0.15);border-radius:var(--radius);padding:.55rem .7rem;margin-bottom:.7rem;}
+.metric-pills{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.75rem;}
+.pill{font-family:'IBM Plex Mono', monospace;font-size:.68rem;color:var(--sky);border:1px solid var(--line-bright);padding:.2rem .55rem;border-radius:20px;}
+.card-footer{display:flex;align-items:center;justify-content:space-between;gap:.8rem;padding:.7rem 1rem;border-top:1px solid var(--line);background:var(--surface);flex-wrap:wrap;}
+.badges{display:flex;gap:.4rem;}
+.badge{font-family:'IBM Plex Mono', monospace;font-size:.65rem;padding:.2rem .5rem;border-radius:var(--radius);border:1px solid var(--line-bright);color:var(--text-dim);}
+.badge.conf-high{color:var(--spectral);border-color:var(--spectral-dim);}
+.badge.conf-medium{color:var(--copper);border-color:var(--copper);}
+.source{font-size:.72rem;color:var(--text-faint);font-style:italic;}
+form.input-row{display:flex;gap:.6rem;margin-top:.2rem;}
+input[type=text]{flex:1;padding:.75rem .9rem;border:1px solid var(--line);background:var(--bg-2);font-family:'IBM Plex Mono', monospace;font-size:.85rem;border-radius:var(--radius);color:var(--text);}
+input[type=text]::placeholder{color:var(--text-faint);}
+input[type=text]:focus{outline:none;border-color:var(--spectral-dim);}
+button{padding:.75rem 1.3rem;background:var(--spectral);color:#0A0F0B;border:none;font-family:'IBM Plex Mono', monospace;font-weight:600;font-size:.8rem;letter-spacing:.01em;cursor:pointer;border-radius:var(--radius);transition:background .12s ease;}
+button:hover{background:#c8ff6e;}
+footer{max-width:1080px;margin:0 auto;padding:2rem 1.6rem 3rem;font-family:'IBM Plex Mono', monospace;font-size:.75rem;color:var(--text-faint);display:flex;justify-content:space-between;flex-wrap:wrap;gap:.5rem;}
+footer a{color:var(--sky);text-decoration:none;}
+@media (max-width: 760px){.stat-strip{grid-template-columns:repeat(2, 1fr);}.stat:nth-child(2){border-right:none;}.domain-grid{grid-template-columns:repeat(2, 1fr);}}
+@media (max-width: 480px){.domain-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <svg class="contours" viewBox="0 0 1080 420" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M -50 380 Q 200 320 400 370 T 900 340 T 1150 380" stroke="#B6FF3E" stroke-width="1" fill="none" opacity="0.25"/>
+    <path d="M -50 320 Q 220 260 420 310 T 920 280 T 1150 320" stroke="#B6FF3E" stroke-width="1" fill="none" opacity="0.18"/>
+    <path d="M -50 260 Q 240 200 440 250 T 940 220 T 1150 260" stroke="#5FD6E3" stroke-width="1" fill="none" opacity="0.14"/>
+    <path d="M -50 200 Q 260 140 460 190 T 960 160 T 1150 200" stroke="#B6FF3E" stroke-width="1" fill="none" opacity="0.10"/>
+    <path d="M -50 140 Q 280 80 480 130 T 980 100 T 1150 140" stroke="#5FD6E3" stroke-width="1" fill="none" opacity="0.08"/>
+  </svg>
+  <div class="hero-inner">
+    <div class="eyebrow"><span class="dot"></span>live backend · FastAPI + TF-IDF RAG</div>
+    <h1>An AI <em>environmental scientist</em>, not a chatbot.</h1>
+    <p class="lede">Ask about soil, water, land use, or climate. Every recommendation below is retrieved live from this server's cited knowledge base and reasoned across multiple variables at once.</p>
+    <div class="stat-strip">
+      <div class="stat"><span class="num">15</span><span class="lbl">cited knowledge entries</span></div>
+      <div class="stat"><span class="num">05</span><span class="lbl">environmental domains</span></div>
+      <div class="stat"><span class="num">FAO·IPCC</span><span class="lbl">+ peer-reviewed sources</span></div>
+      <div class="stat"><span class="num">TF-IDF</span><span class="lbl">structured + semantic retrieval</span></div>
+    </div>
+  </div>
+</div>
+
+<main>
+  <section class="section" id="domains">
+    <div class="section-head">
+      <h2>Knowledge base coverage</h2>
+      <span class="count mono">5 domains · 15 entries</span>
+    </div>
+    <div class="domain-grid" id="domainGrid"></div>
+  </section>
+
+  <section class="section" style="border-bottom:none;">
+    <div class="section-head">
+      <h2>Run an analysis</h2>
+      <span class="count mono">multi-turn · slot-filling · live API</span>
+    </div>
+    <div class="console">
+      <div class="console-bar">
+        <div class="dots"><span></span><span></span><span></span></div>
+        <div class="title">reasoning_session.log</div>
+      </div>
+      <div class="console-body">
+        <div class="chips">
+          <div class="chip" data-msg="Biodiversity is declining on my land">"Biodiversity is declining on my land"</div>
+          <div class="chip" data-msg="Soil organic carbon is 0.3%, rainfall is low, monoculture wheat, semi-arid region">Brief's worked example</div>
+          <div class="chip" data-msg="We have high pollution from pesticides, land use is agriculture, rainfall is moderate">High pollution case</div>
+          <div class="chip" id="resetChip">↺ new session</div>
+        </div>
+        <div class="known-row" id="known">no variables captured yet</div>
+        <div id="log"></div>
+        <form class="input-row" id="form">
+          <input id="input" type="text" placeholder="e.g. SOC is 0.3%, rainfall is low, monoculture wheat, semi-arid region" autocomplete="off" />
+          <button type="submit">Analyze</button>
+        </form>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span>Darukaa.Earth Hackathon — live FastAPI backend + TF-IDF RAG pipeline.</span>
+  <span id="apiStatus" class="mono">checking API…</span>
+</footer>
+
+<script>
+const ICONS = {
+  soil_health: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 9h18M3 14h18M3 19h18" stroke-linecap="round"/><path d="M7 9V5.5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2V9" /></svg>',
+  land_use: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 20 9 6l4 8 3-5 5 11H3Z" stroke-linejoin="round"/></svg>',
+  biodiversity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3c3 3 3 7 0 10-3-3-3-7 0-10Z"/><path d="M12 13v8M8 21h8"/></svg>',
+  climate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 16a4 4 0 1 1 1.2-7.8A5 5 0 0 1 18 10a3.5 3.5 0 0 1-1 6.9H7Z"/></svg>',
+  human_impact: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3" stroke-linecap="round"/></svg>',
+};
+const DOMAINS = [
+  {cat:"soil_health", label:"Soil Health", desc:"pH, organic carbon, moisture, structure", n:4},
+  {cat:"land_use", label:"Land Use", desc:"Cropping systems, agroforestry, fragmentation", n:3},
+  {cat:"biodiversity", label:"Biodiversity", desc:"Species richness, pollinators, habitat diversity", n:3},
+  {cat:"climate", label:"Climate", desc:"Rainfall, temperature, drought risk", n:2},
+  {cat:"human_impact", label:"Human Impact", desc:"Pollution, deforestation, chemical load", n:3},
+];
+function renderDomains(){
+  const grid = document.getElementById('domainGrid');
+  DOMAINS.forEach(d => {
+    const div = document.createElement('div');
+    div.className = 'domain-card';
+    div.innerHTML = `<div class="icon">${ICONS[d.cat]}</div><h3>${d.label}</h3><p>${d.desc}</p><div class="n">${d.n} entries</div>`;
+    grid.appendChild(div);
+  });
+}
+renderDomains();
+
+const sessionId = 'session-' + Math.random().toString(36).slice(2, 10);
+const log = document.getElementById('log');
+const form = document.getElementById('form');
+const input = document.getElementById('input');
+const knownEl = document.getElementById('known');
+const apiStatus = document.getElementById('apiStatus');
+
+fetch('/health').then(r => r.json()).then(() => { apiStatus.textContent = 'API: online'; })
+  .catch(() => { apiStatus.textContent = 'API: unreachable'; });
+
+function escapeHtml(s){ return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+function addUserMsg(text){
+  const row = document.createElement('div');
+  row.className = 'row user';
+  row.innerHTML = `<div class="msg user">${escapeHtml(text)}</div>`;
+  log.appendChild(row);
+}
+function addBotText(text){
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = `<div class="msg bot-text">${escapeHtml(text)}</div>`;
+  log.appendChild(row);
+}
+function confBadgeClass(conf){ return conf === 'high' ? 'conf-high' : 'conf-medium'; }
+
+function addEvidenceCards(recs, links){
+  const wrap = document.createElement('div');
+  wrap.style.width = '100%';
+  if(links && links.length){
+    const linksBox = document.createElement('div');
+    linksBox.className = 'links-box';
+    linksBox.innerHTML = `<span class="lbl">cross-variable reasoning</span><ul>${links.slice(0,3).map(l => `<li>${escapeHtml(l)}</li>`).join('')}</ul>`;
+    wrap.appendChild(linksBox);
+    wrap.appendChild(document.createElement('div')).style.height = '.8rem';
+  }
+  const grid = document.createElement('div');
+  grid.className = 'evidence-grid';
+  recs.forEach((rec, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-head">
+        <h4>${escapeHtml(rec.recommendation)}</h4>
+        <span class="card-idx mono">REC ${String(i+1).padStart(2,'0')}</span>
+      </div>
+      <div class="card-body">
+        <p class="why">${escapeHtml(rec.why_it_works)}</p>
+        <div class="impact-line">↑ ${escapeHtml(rec.quantitative_impact)}</div>
+        <div class="metric-pills">${rec.impacted_metrics.map(m => `<span class="pill">${escapeHtml(m)}</span>`).join('')}</div>
+      </div>
+      <div class="card-footer">
+        <div class="badges">
+          <span class="badge mono">${rec.time_horizon}-term</span>
+          <span class="badge mono ${confBadgeClass(rec.confidence)}">${rec.confidence} confidence</span>
+        </div>
+        <span class="source">${escapeHtml(rec.source)}</span>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+  wrap.appendChild(grid);
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.style.width = '100%';
+  row.appendChild(wrap);
+  log.appendChild(row);
+}
+
+async function respond(text){
+  addUserMsg(text);
+  try{
+    const res = await fetch('/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({session_id: sessionId, message: text})
+    });
+    const data = await res.json();
+    knownEl.innerHTML = Object.keys(data.known_variables).length
+      ? "known → " + Object.entries(data.known_variables).map(([k,v]) => `<b>${k}</b>=${v}`).join("   ")
+      : "no variables captured yet";
+
+    if(data.needs_clarification){
+      addBotText(data.reply);
+    } else {
+      const recs = data.structured_result.recommendations;
+      const links = data.structured_result.multi_metric_reasoning;
+      if(!recs || recs.length === 0){
+        addBotText(data.reply);
+      } else {
+        addEvidenceCards(recs, links);
+      }
+    }
+  }catch(err){
+    addBotText('Connection error — is the backend running on this host? (' + err.message + ')');
+  }
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if(!text) return;
+  input.value = '';
+  respond(text);
+});
+document.querySelectorAll('.chip[data-msg]').forEach(chip => {
+  chip.addEventListener('click', () => respond(chip.dataset.msg));
+});
+document.getElementById('resetChip').addEventListener('click', () => location.reload());
+
+addBotText("Tell me about your land — soil, rainfall, and what's currently grown — and I'll reason through what would help biodiversity, with evidence behind every suggestion. Try a chip above to see it in action.");
+</script>
+</body>
+</html>
