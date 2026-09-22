@@ -1,250 +1,172 @@
-# Darukaa.Earth — AI Biodiversity Intelligence Chatbot
+# Darukaa.Earth — AI Biodiversity Intelligence
 
-A knowledge-grounded conversational system that reasons about biodiversity, soil, land use, and
-climate conditions, and produces evidence-backed, multi-metric recommendations — built for the
-Darukaa.Earth Hackathon Challenge.
+An AI environmental scientist you can talk to. Describe a piece of land in plain English — or POST a JSON site profile — and get ranked, evidence-backed biodiversity interventions with the metrics they move, a time horizon, a confidence score, and a citation to a real study.
 
-This is deliberately **not** a UI-heavy app. The engineering weight is in the knowledge layer and
-the reasoning engine; the chat interface is a thin, minimal demo shell.
+Built for the Darukaa.Earth AI hackathon challenge.
 
 ---
 
-## Why this design
+## Why this is not a prompt wrapper
 
-The brief explicitly rules out "generic LLM-only solutions." So this system does not ask a
-language model to recall biodiversity facts from memory. Instead:
+The knowledge lives in a **retrievable, indexed corpus**, not in a system prompt. A deterministic reasoning engine decides *what to recommend*; the language model is only allowed to *narrate* what the engine has already decided and retrieved, and is forbidden from inventing figures. With no API key present, a deterministic narrator takes over and the system still works end to end.
 
-1. Every fact is stored in a **structured, auditable knowledge base** (`knowledge_base.json`),
-   with a real citation (FAO / IPCC / peer-reviewed literature) attached to every entry.
-2. A **retrieval layer** (RAG) pulls the relevant entries for a given situation, using both
-   deterministic condition-matching and TF-IDF semantic search — never free-form generation of
-   facts.
-3. A **reasoning engine** assembles retrieved knowledge into recommendations that explicitly
-   connect multiple environmental variables (soil ↔ biodiversity, water ↔ species survival, land
-   use ↔ fragmentation), rather than single-variable advice.
-4. A **conversation layer** tracks what's known across turns and only reasons once there's enough
-   grounded context — otherwise it asks a clarifying question, same as a real environmental
-   scientist would before giving advice.
-
-No LLM API call is required to run this system at all — the "intelligence" is the retrieval +
-reasoning pipeline. (An LLM could be layered on top purely to smooth surface language, but the
-facts, mechanisms, metrics, and citations below are never LLM-generated — see "Optional LLM layer"
-at the bottom.)
+| Requirement | How it is met |
+|---|---|
+| Retrievable knowledge layer | 48-document curated corpus indexed in ChromaDB with dense embeddings, blended with BM25-lite lexical scoring and metadata boosts |
+| Conversational intelligence | Slot extraction into a persistent site profile, gap-driven clarifying questions, and a permanent **asked-slot ledger** so no question is ever repeated |
+| Evidence-backed recommendations | Every card carries what to do / why it works / which metrics improve / which studies support it |
+| Multi-metric reasoning | ~30 diagnostic flags and explicit couplings: soil↔biodiversity, water↔species, land use↔fragmentation |
+| Text + structured input | Free text and a JSON `SiteContext` payload, geo-coordinates included |
+| Required output fields | Recommendation, impacted metrics, time horizon (short/medium/long), confidence with a stated basis |
 
 ---
 
 ## Architecture
 
-```mermaid
-flowchart TD
-    U[User: text or JSON] --> C[Conversation Layer<br/>conversation.py]
-    C -->|slot-filled variables| E{Enough context?<br/>3+ core variables}
-    E -->|No| Q[Clarifying question]
-    E -->|Yes| R[Recommendation Engine<br/>recommendation_engine.py]
-    R --> K[Knowledge Retriever<br/>knowledge/retriever.py]
-    K -->|structured filter pass| KB[(knowledge_base.json<br/>20 cited entries)]
-    K -->|TF-IDF semantic pass| KB
-    K --> R
-    R -->|multi-metric synthesis| O[Structured recommendation:<br/>what / why / metrics / horizon / confidence / source]
-    O --> C
-    C --> Reply[Chat reply + structured JSON]
+```
+┌──────────────────────── React (Vite) ────────────────────────┐
+│  Sidebar: History · Live Metrics · About                     │
+│  Thread:  Hero → Clarify cards → Analysis cards              │
+│  Composer: Text | Structured JSON                            │
+└───────────────────────────── /api ───────────────────────────┘
+                                │
+┌──────────────────────── FastAPI ─────────────────────────────┐
+│  1. extraction.py   free text → 24 typed site variables      │
+│  2. session_store   SQLite: context, messages, asked-slots   │
+│  3. clarify.py      gap analysis, ≤2 questions, never repeat │
+│  4. vector_store    ChromaDB dense + BM25 + metadata boost   │
+│  5. reasoning.py    30 flags → 16 interventions → confidence │
+│  6. llm.py          narration only, must cite [DOC-ID]       │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### Components
+**Request flow:** `POST /api/chat` → merge structured + extracted context into session memory → decide clarify vs analyse → hybrid retrieval → score interventions → bind evidence → project metrics → narrate → persist.
 
-| Layer | File | Responsibility |
-|---|---|---|
-| API | `backend/app.py` | FastAPI endpoints, session store, request/response wiring |
-| Schemas | `backend/models.py` | Pydantic request/response contracts |
-| Conversation | `backend/conversation.py` | Multi-turn memory, slot-filling, clarifying questions, lightweight text→variable extraction |
-| Reasoning | `backend/recommendation_engine.py` | Multi-metric synthesis, cross-variable linkage, evidence formatting |
-| Knowledge retrieval | `backend/knowledge/retriever.py` | RAG: structured condition matching + TF-IDF semantic search |
-| Knowledge base | `backend/knowledge/knowledge_base.json` | 20 structured, cited findings across soil/land/biodiversity/climate/human-impact |
-| Frontend | `frontend/index.html` | Minimal single-page chat demo (no framework, calls the API directly) |
+### Why retrieval is hybrid
 
-### Data flow for one request
+Dense embeddings alone miss exact technical tokens (`dS/m`, `SOC`, species names); BM25 alone misses paraphrase. Scores are blended `0.62 · dense + 0.38 · lexical`, then boosted for variable overlap, biome match and source tier. `GET /api/knowledge/search` exposes all three components so the ranking is auditable.
 
-1. User sends text ("Soil organic carbon is 0.3%, rainfall is low, monoculture wheat, semi-arid") or JSON.
-2. `conversation.py` extracts variables via regex/keyword rules (`update_from_text`) or accepts them
-   directly (`update_from_structured`), and merges them into session memory.
-3. If fewer than 3 core variables (`soil_organic_carbon`, `rainfall`, `land_use`) are known, the
-   system returns a targeted clarifying question instead of guessing.
-4. Once enough context exists, `retriever.py` runs two retrieval passes:
-   - **Structured pass**: matches each knowledge entry's `trigger_conditions` against known
-     variables (e.g. `soil_organic_carbon < 1.0`) — deterministic and auditable.
-   - **Semantic pass**: TF-IDF cosine similarity over entry text, to catch relevant knowledge that
-     doesn't have an exact structured trigger, or to handle free-text questions.
-5. `recommendation_engine.py` turns retrieved entries into the required output shape (what to do /
-   why it works / metrics impacted / time horizon / confidence / source) and explicitly reports
-   which **cross-variable relationships** are in play (e.g. "rainfall governs soil moisture, which
-   constrains the soil microbial community").
-6. The response is returned both as natural-language chat text and as structured JSON
-   (`structured_result`) for programmatic consumers.
+### Why confidence is not a fixed number
 
-### Why TF-IDF instead of a downloaded embedding model
+Confidence blends evidence tier depth, engine fit, biome match, site-profile completeness, and **how many of the variables an intervention depends on were measured rather than assumed**. The same measure scores `high` on a well-characterised site and `indicative` where the key variables were guessed. A regression test asserts this relationship holds.
 
-TF-IDF is local, deterministic, and fully explainable — you can point at exactly which terms drove
-a retrieval match, which matters for a "scientific grounding" evaluation criterion. Swapping in a
-dense embedding model + vector DB (e.g. `sentence-transformers` + FAISS/Chroma/Pinecone) is a
-drop-in upgrade behind the same `KnowledgeRetriever.retrieve()` interface — nothing else in the
-system would need to change. That upgrade path is noted directly in `retriever.py`.
+### How repetition is prevented
+
+Every clarifying question writes its slot to `sessions.asked_slots_json` before the response is returned. `clarify.next_questions()` filters against that ledger, against already-known values, and against relevance predicates. Questioning stops entirely after turn 4 or once four core slots are known; anything asked but never answered is converted into an explicitly stated assumption shown in the analysis.
 
 ---
 
-## Knowledge base schema
+## Data model
 
-Each of the 20 entries in `backend/knowledge/knowledge_base.json` follows this schema:
+**SQLite** (`backend/data/darukaa.db`)
 
-```json
-{
-  "id": "KB001",
-  "category": "soil_health",
-  "variables": ["soil_organic_carbon", "biodiversity", "land_use"],
-  "trigger_conditions": {"soil_organic_carbon": "<1.0"},
-  "finding": "What the science shows",
-  "intervention": "What to do",
-  "mechanism": "Why it works, scientifically",
-  "quantitative_impact": "Measurable, cited estimate of effect size",
-  "impacted_metrics": ["soil_organic_carbon", "microbial_diversity", "pollinator_support"],
-  "time_horizon": "short | medium | long",
-  "confidence": "high | medium",
-  "source": "Real citation (FAO / IPCC / peer-reviewed study, with year)"
-}
-```
+| Table | Columns |
+|---|---|
+| `sessions` | `id`, `title`, `created_at`, `updated_at`, `context_json`, `asked_slots_json`, `meta_json` |
+| `messages` | `id`, `session_id`, `turn`, `role`, `content`, `payload_json`, `created_at` |
+| `retrieval_log` | `id`, `session_id`, `turn`, `query`, `doc_id`, `score`, `created_at` |
 
-Categories covered: `soil_health`, `land_use`, `biodiversity`, `climate`, `human_impact` — matching
-all five domains required by the brief. `trigger_conditions` support exact match, substring match,
-and numeric thresholds (`<x`, `>x`).
+**Vector store** (`backend/data/chroma`) — one record per document: embedding plus metadata `{id, title, source, year, tier, variables, biomes, metrics}`.
+
+**`SiteContext`** — 24 optional fields: `soil_organic_carbon`, `soil_ph`, `soil_moisture`, `soil_texture`, `salinity_ds_m`, `land_use`, `crop`, `area_ha`, `region`, `biome`, `rainfall_mm`, `rainfall_pattern`, `temperature_c`, `irrigation`, `tree_cover_pct`, `natural_habitat_pct`, `species_of_concern`, `observed_changes`, `fertiliser_kg_n_ha`, `pesticide_use`, `pollution_sources`, `latitude`, `longitude`, `goal`, `constraints`. Live schema at `GET /api/schema/site-context`.
 
 ---
 
 ## Local setup
 
-Requirements: Python 3.11+
-
-```bash
-git clone <this-repo-url>
-cd darukaa-biodiversity-ai/backend
-python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-
-uvicorn app:app --reload --port 8000
-```
-
-Then open **http://localhost:8000/** for the demo chat UI, or call the API directly:
-
-```bash
-curl -X POST https://ai-biodiversity-intelligencee.onrender.com/api/chat 
-  -H "Content-Type: application/json" \
-  -d '{"session_id": "demo", "message": "Soil organic carbon is 0.3%, rainfall is low, monoculture wheat, semi-arid region"}'
-```
-
-More examples (including structured JSON and geo-coordinate input) are in `sample_requests.md`.
-
-### Run with Docker
-
-```bash
-docker compose up --build
-```
-
-### Run tests
+**Backend**
 
 ```bash
 cd backend
-pytest tests/ -v
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env          # add ANTHROPIC_API_KEY (optional)
+uvicorn app.main:app --reload --port 8000
 ```
 
-9 tests cover: retrieval (structured + semantic), multi-metric reasoning output shape, slot-filling
-from free text, clarifying-question behavior, and both API endpoints end-to-end.
+Docs at `http://localhost:8000/docs`. Optional higher-quality embeddings: `pip install -r requirements-embeddings.txt`.
+
+**Frontend**
+
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:5173, /api proxied to :8000
+```
+
+**Docker**
+
+```bash
+cp backend/.env.example backend/.env
+docker compose up --build      # web :8080, api :8000
+```
+
+**Tests**
+
+```bash
+cd backend && pip install pytest && pytest -q
+```
 
 ---
 
-## API reference
+## API
 
-| Endpoint | Method | Purpose |
+| Method | Path | Purpose |
 |---|---|---|
-| `/chat` | POST | Free-text input, multi-turn, session-memory aware |
-| `/chat/structured` | POST | Structured JSON input; accepts optional `latitude`/`longitude` |
-| `/session/{id}` | GET | Inspect a session's accumulated variables (demo/debug aid) |
-| `/health` | GET | Liveness probe |
+| GET | `/api/health` | Status, LLM availability, knowledge-base stats |
+| POST | `/api/chat` | Main conversational endpoint |
+| GET/POST | `/api/sessions` | List / create sessions |
+| GET/DELETE | `/api/sessions/{id}` | Full transcript / delete |
+| GET | `/api/knowledge/stats` | Corpus and retrieval configuration |
+| GET | `/api/knowledge/search?q=&k=` | Auditable retrieval with score components |
+| GET | `/api/knowledge/documents[/{id}]` | Browse the evidence corpus |
+| GET | `/api/metrics/{session_id}` | Live telemetry for the session |
+| GET | `/api/schema/site-context` | JSON schema for structured input |
 
-Request/response schemas are in `backend/models.py` and are also browsable live via FastAPI's
-auto-generated docs at `/docs` once the server is running.
+**Example**
 
----
+```bash
+curl -X POST http://localhost:8000/api/chat -H 'Content-Type: application/json' -d '{
+  "message": "Biodiversity is falling on my land.",
+  "structured": {
+    "soil_organic_carbon": 0.3, "soil_ph": 8.4, "land_use": "monoculture cropland",
+    "biome": "semi_arid", "rainfall_mm": 420, "tree_cover_pct": 3,
+    "latitude": 26.91, "longitude": 75.79
+  }
+}'
+```
 
-## How each brief requirement is met
-
-| Requirement | Where |
-|---|---|
-| Structured, retrievable knowledge layer (not just prompts) | `knowledge_base.json` + `retriever.py` |
-| Soil / land use / biodiversity / climate / human impact coverage | All 5 categories present in KB |
-| Clarifying questions on incomplete input | `conversation.py::next_clarifying_question` |
-| Multi-turn memory | `ConversationSession` keyed by `session_id`, held across turns |
-| Evidence-backed recommendations (what/why/metric/source) | `recommendation_engine.py` output shape |
-| Multi-metric reasoning (soil↔biodiversity, water↔species, land use↔fragmentation) | `VARIABLE_LINKS` in `recommendation_engine.py`, surfaced per-response |
-| Text input | `/chat` |
-| Structured (JSON) input | `/chat/structured` |
-| Geo-coordinates (bonus) | `latitude`/`longitude` fields on `/chat/structured` |
-| Recommendation / metrics / time horizon / confidence | Every recommendation object |
-| ≥3 environmental variables reasoned together | `has_enough_context()` enforces this before any recommendation is generated |
+Returns `kind`, `headline`, `message`, `context`, `context_completeness`, `assumptions`, `questions`, `recommendations`, `linkages`, `citations`, `retrieval`, `metric_projection`, `monitoring_plan`, `generator`, `latency_ms`.
 
 ---
 
 ## CI/CD
 
-`.github/workflows/ci.yml` runs on every push/PR to `main`: installs dependencies, runs the pytest
-suite, and does a syntax check across all backend modules. A green check is required before
-merging in a team setting; for solo/hackathon use it's a fast correctness gate.
+`.github/workflows/ci.yml` runs on every push and PR to `main`:
 
-**Suggested deploy path** (not automated in this repo, documented for reviewers): build the
-`Dockerfile` image and deploy to Render / Railway / Fly.io / any container host; set the start
-command to the image's default `CMD`. No environment variables are required for the core system
-since it has no external API dependency.
+1. **Backend** — install, `pytest -q`, then boot `uvicorn` and poll `/api/health` as a smoke test.
+2. **Frontend** — `npm install`, `npm run build`, upload `dist/` as an artifact.
+3. **Docker** — build both images, gated on the first two jobs passing.
+
+**Deploy.** `render.yaml` provisions the API (with a 1 GB persistent disk mounted at `/var/data` for ChromaDB and SQLite) and the static frontend. The frontend also deploys to Vercel as-is via `frontend/vercel.json` — set `VITE_API_URL` to the API origin. Set `ANTHROPIC_API_KEY` as a secret; without it the deterministic narrator is used and the app still functions.
 
 ---
 
-## Project structure
+## Evidence base
+
+48 documents spanning FAO, IPCC (SRCCL, AR6), IUCN, IPBES, CBD GBF, UNCCD, Ramsar, UNEP, TEEB, ISRIC SoilGrids, ESA WorldCover and GEO BON, alongside peer-reviewed work including Lal (2004), Poeplau & Don (2015), Tamburini (2020), Garibaldi (2013), Haddad (2015), Newbold (2015), Crouzeilles (2016), Isbell (2015) and Dainese (2019). Each record is typed with `variables`, `biomes`, `metrics` and a `tier` (`meta_analysis` / `peer_reviewed` / `institutional`) that feeds both retrieval boosting and confidence scoring.
+
+## Project layout
 
 ```
-darukaa-biodiversity-ai/
-├── backend/
-│   ├── app.py                  # FastAPI entrypoint
-│   ├── models.py                # Pydantic schemas
-│   ├── conversation.py          # Multi-turn memory + slot filling
-│   ├── recommendation_engine.py # Multi-metric reasoning
-│   ├── knowledge/
-│   │   ├── knowledge_base.json  # 20 cited structured entries
-│   │   └── retriever.py         # RAG: structured + TF-IDF semantic retrieval
-│   ├── tests/
-│   │   └── test_basic.py
-│   └── requirements.txt
-├── frontend/
-│   └── index.html               # Minimal demo chat UI
-├── .github/workflows/ci.yml
-├── Dockerfile
-├── docker-compose.yml
-├── sample_requests.md
-└── README.md
+backend/   app/{config,models,main}.py · knowledge/{corpus,vector_store}.py
+           app/services/{extraction,session_store,clarify,reasoning,llm,advisor}.py
+           app/routers/api.py · tests/test_system.py
+frontend/  src/{App,main,api,illustrations,styles}
+           src/components/{Sidebar,Hero,Composer,Analysis,Clarify,LiveMetrics,About}.jsx
+.github/workflows/ci.yml · docker-compose.yml · render.yaml
 ```
 
----
+## License
 
-## Optional LLM layer (not required, noted for completeness)
-
-The core reasoning above is fully deterministic and requires no LLM. If a more conversational
-surface layer is desired on top (e.g., to rephrase the structured recommendation more fluidly),
-the `structured_result` returned by `/chat` is designed to be handed as-is to an LLM call with a
-system prompt like *"rephrase this data conversationally without inventing new facts"* — the
-knowledge/citations remain the deterministic source of truth either way, so scientific grounding is
-never at the mercy of model hallucination.
-
----
-
-## Known limitations / next steps
-
-- Knowledge base currently has 20 curated entries; a production system would ingest a larger
-  corpus of papers/reports (PDF/CSV ingestion pipeline) into the same schema.
-- Session memory is in-process; swap for Redis/Postgres for multi-instance deployment.
-- Geo-coordinates are currently stored but not yet used to auto-infer region/climate — a natural
-  next step is reverse-geocoding + a climate/soil API lookup to auto-fill variables.
+MIT.

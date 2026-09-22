@@ -1,7 +1,17 @@
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
-pydantic==2.9.2
-scikit-learn==1.5.2
-numpy==1.26.4
-pytest==8.3.3
-httpx==0.27.2
+# --- core API -------------------------------------------------------------
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+python-dotenv==1.0.1
+numpy==2.1.3
+
+# --- LLM narration --------------------------------------------------------
+anthropic==0.40.0
+
+# --- vector database ------------------------------------------------------
+chromadb==0.5.23
+
+# Optional: transformer embeddings (~2 GB with torch). The app runs without it
+# and falls back to a deterministic hashing embedder, so install only if you
+# want the higher-quality semantic index:
+#   pip install -r requirements-embeddings.txt
